@@ -1,0 +1,246 @@
+## Detailed Report: Retail Database and Chatbot Integration
+
+### Introduction
+
+This report outlines the development and integration of a retail database and a chatbot application designed to assist users with common inquiries related to product information, order status, and returns. The project leverages SQLite for database management and OpenAI's GPT-3.5-turbo for natural language processing. The application is built using the Flask web framework.
+
+### Database Design
+
+The retail database is designed with two primary tables: `products` and `orders`. The `products` table stores information about the items available for sale, while the `orders` table tracks customer orders.
+
+#### Schema
+
+1. **Products Table**
+
+    | Field        | Type     | Description                    |
+    |--------------|----------|--------------------------------|
+    | id           | INTEGER  | Primary key, auto-incremented. |
+    | name         | TEXT     | Name of the product.           |
+    | description  | TEXT     | Description of the product.    |
+    | price        | REAL     | Price of the product.          |
+    | stock        | INTEGER  | Number of items in stock.      |
+
+2. **Orders Table**
+
+    | Field         | Type     | Description                    |
+    |---------------|----------|--------------------------------|
+    | id            | INTEGER  | Primary key, auto-incremented. |
+    | customer_name | TEXT     | Name of the customer.          |
+    | product_id    | INTEGER  | Foreign key, references `products(id)`. |
+    | quantity      | INTEGER  | Quantity of the product ordered. |
+    | status        | TEXT     | Status of the order (e.g., "Shipped", "Processing", "Delivered", "Cancelled"). |
+
+### Database Creation and Population
+
+The database is created and populated with sample data using a Python script.
+
+#### `create_retail_db.py`
+
+```python
+import sqlite3
+
+def create_connection():
+    return sqlite3.connect('retail.db')
+
+def create_tables(conn):
+    cursor = conn.cursor()
+
+    # Create products table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            price REAL NOT NULL,
+            stock INTEGER NOT NULL
+        )
+    ''')
+
+    # Create orders table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_name TEXT NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
+
+    conn.commit()
+
+def populate_tables(conn):
+    cursor = conn.cursor()
+
+    # Insert sample data into products table
+    cursor.execute('''
+        INSERT INTO products (name, description, price, stock)
+        VALUES 
+        ('Jeans', 'Comfortable denim jeans', 49.99, 100),
+        ('Chinos', 'Casual cotton chinos', 39.99, 150),
+        ('T-Shirt', 'Basic white t-shirt', 19.99, 200),
+        ('Sneakers', 'Stylish running sneakers', 79.99, 50)
+    ''')
+
+    # Insert sample data into orders table
+    cursor.execute('''
+        INSERT INTO orders (customer_name, product_id, quantity, status)
+        VALUES 
+        ('John Doe', 1, 2, 'Shipped'),
+        ('Jane Smith', 2, 1, 'Processing'),
+        ('Alice Johnson', 3, 3, 'Delivered'),
+        ('Bob Brown', 4, 1, 'Cancelled')
+    ''')
+
+    conn.commit()
+
+def main():
+    conn = create_connection()
+    create_tables(conn)
+    populate_tables(conn)
+    conn.close()
+
+if __name__ == '__main__':
+    main()
+```
+
+### Chatbot Implementation
+
+The chatbot is implemented using OpenAI's GPT-3.5-turbo model. It is capable of handling user queries related to product information, order status, calculating discounts, and comparing prices.
+
+#### `chatbot.py`
+
+```python
+import openai
+import requests
+from database import query_product_info, get_order_status
+
+openai.api_key = 'your-openai-api-key'
+
+def ask_chatbot(prompt):
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return response['choices'][0]['message']['content'].strip()
+
+def calculate_discount(price, discount):
+    return price - (price * discount / 100)
+
+def compare_prices(product_name):
+    # Simplified example; in reality, you'd need to scrape or use APIs of other websites.
+    response = requests.get(f"https://api.pricecomparison.com/{product_name}")
+    return response.json()
+```
+
+### Web Application
+
+The web application is built using Flask and provides a user interface for interacting with the chatbot. Users can enter their queries and receive responses generated by the chatbot.
+
+#### `app.py`
+
+```python
+from flask import Flask, request, render_template
+from chatbot import ask_chatbot, calculate_discount, compare_prices
+from database import query_product_info, get_order_status
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/query', methods=['POST'])
+def query():
+    user_query = request.form['query']
+    
+    if "order status" in user_query.lower():
+        order_id = extract_order_id(user_query)  # Implement extract_order_id to get order ID from user_query
+        status = get_order_status(order_id)
+        return f"Order Status: {status}"
+    
+    elif "discount" in user_query.lower():
+        # Extract price and discount values from user_query
+        price = extract_price(user_query)
+        discount = extract_discount(user_query)
+        discounted_price = calculate_discount(price, discount)
+        return f"Discounted Price: {discounted_price}"
+    
+    elif "compare prices" in user_query.lower():
+        product_name = extract_product_name(user_query)  # Implement extract_product_name to get product name
+        prices = compare_prices(product_name)
+        return f"Price Comparison: {prices}"
+    
+    else:
+        response = ask_chatbot(user_query)
+        return f"Chatbot Response: {response}"
+
+def extract_order_id(query):
+    # Extract order ID from the query (simplified)
+    return query.split()[-1]
+
+def extract_price(query):
+    # Extract price from the query (simplified)
+    return float(query.split()[1])
+
+def extract_discount(query):
+    # Extract discount from the query (simplified)
+    return float(query.split()[3])
+
+def extract_product_name(query):
+    # Extract product name from the query (simplified)
+    return query.split()[-1]
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+#### `templates/index.html`
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Retail Chatbot</title>
+</head>
+<body>
+    <h1>Retail Chatbot</h1>
+    <form action="/query" method="post">
+        <label for="query">Ask something:</label>
+        <input type="text" id="query" name="query" required>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
+```
+
+### Running the Application
+
+1. **Install Dependencies**: Ensure you have the required packages installed by running:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2. **Create the Database**: Run the `create_retail_db.py` script to create and populate the database:
+
+    ```bash
+    python create_retail_db.py
+    ```
+
+3. **Run the Flask Application**: Start the Flask application by running:
+
+    ```bash
+    python app.py
+    ```
+
+4. **Access the Application**: Open your web browser and navigate to `http://127.0.0.1:5000/` to interact with the chatbot.
+
+### Conclusion
+
+This project demonstrates the integration of a retail database with a chatbot application using Flask, SQLite, and OpenAI's GPT-3.5-turbo model. The chatbot can handle various user queries, providing a seamless and interactive customer service experience. Future enhancements could include more sophisticated natural language processing, improved error handling, and a more comprehensive user interface.
